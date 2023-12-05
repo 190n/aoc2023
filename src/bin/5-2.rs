@@ -1,7 +1,11 @@
 #![feature(array_chunks)]
 #![feature(iter_array_chunks)]
 
-use std::io::{self};
+use std::{
+	io::{self},
+	sync::Arc,
+	thread::JoinHandle,
+};
 
 #[derive(Debug)]
 struct Mapping {
@@ -15,6 +19,7 @@ struct Mapper {
 	mappings: Vec<Mapping>,
 }
 
+#[derive(Copy, Clone)]
 struct SeedRange {
 	start: u64,
 	len: u64,
@@ -57,50 +62,10 @@ impl Mapper {
 		return input;
 	}
 
-	pub fn map_range(&self, start: u64, len: u64) -> Vec<(u64, u64)> {
-		let mut output = Vec::<(u64, u64)>::new();
-		for map in &self.mappings {
-			if start >= map.src_start && start + len <= map.src_start + map.len {
-				// totally contained
-				output.push((map.dst_start + (start - map.src_start), len));
-			} else if start >= map.src_start && start < map.src_start + map.len {
-				// input goes higher than range of mapping
-				// input       (5, 6, 7, 8, 9, 10, 11, 12)
-				// map   (3, 4, 5, 6, 7, 8) -> (20, 21, 22, 23, 24, 25)
-				// output should be (22, 23, 24, 25)
-				dbg!(map, start, len);
-				let common_len = len - (map.src_start + map.len);
-				output.push((map.dst_start + map.len - common_len, common_len));
-			} else if start + len >= map.src_start && start + len < map.src_start + map.len {
-				// input starts before mapping
-				// input (1, 2, 3, 4, 5, 6)
-				// map         (3, 4, 5, 6, 7, 8) -> (20, 21, 22, 23, 24, 25)
-				// output should be (20, 21, 22, 23)
-				let common_len = start + len - map.src_start;
-				output.push((map.dst_start, common_len))
-			}
-		}
-		return output;
-	}
-
-	pub fn map_many(mappers: &[&Mapper], input: u64) -> u64 {
+	pub fn map_many(mappers: &[Mapper], input: u64) -> u64 {
 		let mut current = input;
 		for m in mappers {
 			current = m.map(current);
-		}
-		return current;
-	}
-
-	pub fn map_many_range(mappers: &[&Mapper], start: u64, len: u64) -> Vec<(u64, u64)> {
-		let mut current = vec![(start, len)];
-		for m in mappers {
-			current = current
-				.iter()
-				.map(|(start, len)| m.map_range(*start, *len))
-				.fold(Vec::new(), |mut acc, e| {
-					acc.extend(e);
-					acc
-				});
 		}
 		return current;
 	}
@@ -141,29 +106,56 @@ fn main() -> io::Result<()> {
 	assert!(iter.next().unwrap() == "humidity-to-location map:");
 	let humidity_to_location = Mapper::build(&mut iter);
 
-	let all_maps = [
-		&seed_to_soil,
-		&soil_to_fertilizer,
-		&fertilizer_to_water,
-		&water_to_light,
-		&light_to_temperature,
-		&temperature_to_humidity,
-		&humidity_to_location,
-	];
+	let all_maps = Arc::new([
+		seed_to_soil,
+		soil_to_fertilizer,
+		fertilizer_to_water,
+		water_to_light,
+		light_to_temperature,
+		temperature_to_humidity,
+		humidity_to_location,
+	]);
 
-	let lowest_location = seeds
-		.iter()
-		.map(|seed_range| {
-			eprintln!("processing {} seeds", seed_range.len);
-			let range = (seed_range.start)..(seed_range.start + seed_range.len);
-			range
-				.into_iter()
-				.map(|s| Mapper::map_many(&all_maps, s))
-				.min()
-				.unwrap()
+	const CHUNK_SIZE: u64 = 4096;
+	const NUM_THREADS: u16 = 16;
+
+	let chunks: Arc<Vec<SeedRange>> = Arc::new(
+		seeds
+			.iter()
+			.flat_map(|sr| {
+				(0..(sr.len / CHUNK_SIZE)).map(|chunk| {
+					let start = sr.start + CHUNK_SIZE * chunk;
+					SeedRange {
+						start,
+						len: CHUNK_SIZE.min(sr.start + sr.len - start),
+					}
+				})
+			})
+			.collect(),
+	);
+
+	let lowest_location = (0..NUM_THREADS)
+		.map(|i| {
+			let all_maps_ref = all_maps.clone();
+			let chunks_ref = chunks.clone();
+			std::thread::spawn(move || {
+				((i as usize)..chunks_ref.len())
+					.step_by(NUM_THREADS as usize)
+					.flat_map(|j| {
+						let sr = chunks_ref[j];
+						let range = (sr.start)..(sr.start + sr.len);
+						range.map(|seed| Mapper::map_many(all_maps_ref.as_ref(), seed))
+					})
+					.min()
+					.unwrap()
+			})
 		})
+		.collect::<Vec<JoinHandle<u64>>>()
+		.into_iter()
+		.map(|t| t.join().unwrap())
 		.min()
 		.unwrap();
+
 	dbg!(lowest_location);
 
 	Ok(())
