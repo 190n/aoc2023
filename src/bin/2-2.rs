@@ -9,8 +9,7 @@ fn main() -> io::Result<()> {
 	for line in std::io::stdin().lines() {
 		let line = line?;
 
-		let [game, reveals] = line.split(": ").array_chunks().next().unwrap();
-		let game_id: u32 = game[5..].parse().unwrap();
+		let reveals = line.split(": ").nth(1).unwrap();
 
 		let mut max_red: u32 = 0;
 		let mut max_green: u32 = 0;

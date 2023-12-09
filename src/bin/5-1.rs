@@ -62,7 +62,6 @@ impl Mapper {
 }
 
 fn main() -> io::Result<()> {
-	let mut sum: u32 = 0;
 	let mut iter = io::stdin().lines().map(|l| l.unwrap());
 
 	let seeds_line = iter.next().unwrap();
