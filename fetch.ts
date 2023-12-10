@@ -14,3 +14,11 @@ const input = await (await fetch(`https://adventofcode.com/2023/day/${day}/input
 
 Deno.writeTextFileSync(`inputs/example${day}.txt`, exampleInput);
 Deno.writeTextFileSync(`inputs/input${day}.txt`, input);
+
+Deno.writeTextFileSync(`src/bin/${day}-1.rs`, `use std::io;
+
+fn main() -> io::Result<()> {
+	let iter = io::stdin().lines().map(|l| l.unwrap());
+	Ok(())
+}
+`);
