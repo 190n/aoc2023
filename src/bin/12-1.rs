@@ -59,132 +59,65 @@ fn indent(amount: u32) -> () {
 }
 
 impl Row {
-	fn count_arrangements_internal(
+	fn assign_operational(
 		conditions: &[Condition],
+		current_damaged_group: usize,
 		damaged_groups: &[usize],
-		depth: u32,
 	) -> usize {
-		if damaged_groups.len() == 0 {
-			return 1;
-		}
-
-		indent(depth);
-		for &c in conditions {
-			eprint!(
-				"{}",
-				match c {
-					Operational => ".",
-					Damaged => "#",
-					Unknown => "?",
-				}
+		if current_damaged_group == 0 {
+			return Row::count_arrangements_internal(
+				&conditions[1..],
+				damaged_groups[1],
+				&damaged_groups[1..],
+			);
+		} else {
+			return Row::count_arrangements_internal(
+				&conditions[1..],
+				current_damaged_group,
+				damaged_groups,
 			);
 		}
-		eprint!("\n");
+	}
 
-		assert!(conditions[0] == Operational);
-		assert!(conditions[conditions.len() - 1] == Operational);
-		let mut n: usize = 0;
-		let mut working_set: Vec<Condition> = conditions.to_owned();
-		let group_len = damaged_groups[0];
-		let mut satisfied = false;
-		// look for all places to put the first damaged group
-		for i in 1..(working_set.len() - 1) {
-			if satisfied {
-				return n;
-			}
-
-			match working_set[i] {
-				Operational => {},
-				Damaged => {
-					if working_set[i - 1] != Operational {
-						continue;
-					}
-					indent(depth);
-					eprintln!("looking for match starting at {i}");
-					let mut j = i;
-					while working_set[j + 1] == Damaged {
-						j += 1;
-					}
-					if j - i + 1 == group_len {
-						indent(depth);
-						eprintln!("{group_len}-long group is matched by {i} thru {j}");
-						// group is already satisfied
-						n += Row::count_arrangements_internal(
-							&working_set[(j + 1)..],
-							&damaged_groups[1..],
-							depth + 1,
-						);
-					}
-					satisfied = true;
-				},
-				Unknown => {
-					let mut span = i..(i + 1);
-					while working_set[span.start - 1] != Operational {
-						span = (span.start - 1)..(span.end);
-					}
-					while working_set[span.end] != Operational {
-						span = (span.start)..(span.end + 1);
-					}
-
-					indent(depth);
-					eprintln!("{} {} {}", span.start, i, span.end);
-
-					if (i..span.end).len() < group_len {
-						continue;
-					}
-
-					indent(depth);
-					eprint!("found span {span:?}. new row = ");
-
-					for j in (span.start)..i {
-						working_set[j] = Operational;
-					}
-					for j in (span.start)..(span.start + group_len) {
-						working_set[j] = Damaged;
-					}
-					working_set[i + group_len] = Operational;
-
-					for (i, c) in working_set.iter().enumerate() {
-						if i == span.start {
-							eprint!("[");
-						}
-						eprint!(
-							"{}",
-							match c {
-								Operational => ".",
-								Damaged => "#",
-								Unknown => "?",
-							}
-						);
-						if i == span.end - 1 {
-							eprint!("]");
-						}
-					}
-					eprint!("\n");
-					// dbg!(i, span.start, span.end);
-					indent(depth);
-					eprintln!("recursive call starting from index {}", i + group_len);
-					n += Row::count_arrangements_internal(
-						&working_set[(i + group_len)..],
-						&damaged_groups[1..],
-						depth + 1,
-					);
-					working_set.copy_from_slice(conditions);
-				},
-			}
+	fn assign_damaged(
+		conditions: &[Condition],
+		current_damaged_group: usize,
+		damaged_groups: &[usize],
+	) -> usize {
+		if current_damaged_group == 0 {
+			return 0;
 		}
-		indent(depth);
-		eprintln!("RETURN: {n}");
-		return n;
+	}
+
+	fn count_arrangements_internal(
+		conditions: &[Condition],
+		current_damaged_group: usize,
+		damaged_groups: &[usize],
+	) -> usize {
+		if conditions.len() == 1 && damaged_groups.len() == 1 && current_damaged_group == 0 {
+			return 1;
+		} else if conditions.len() == 1 || damaged_groups.len() == 1 {
+			return 0;
+		} else {
+			return match conditions[0] {
+				Operational => {
+					Row::assign_operational(conditions, current_damaged_group, damaged_groups)
+				},
+				Damaged => Row::assign_damaged(conditions, current_damaged_group, damaged_groups),
+				Unknown => {
+					Row::assign_operational(conditions, current_damaged_group, damaged_groups)
+						+ Row::assign_damaged(conditions, current_damaged_group, damaged_groups)
+				},
+			};
+		}
 	}
 
 	pub fn count_arrangements(&self) -> usize {
-		// pad the conditions with working springs so end conditions are easier
-		let mut padded_conditions = Vec::<Condition>::with_capacity(self.conditions.len() + 2);
-		padded_conditions.push(Operational);
-		padded_conditions.extend(&self.conditions);
-		padded_conditions.push(Operational);
-		Row::count_arrangements_internal(&padded_conditions, &self.damaged_groups, 0)
+		return Row::count_arrangements_internal(
+			&self.conditions,
+			self.damaged_groups[0],
+			&self.damaged_groups,
+		);
 	}
 }
 
